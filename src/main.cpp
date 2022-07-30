@@ -8,7 +8,7 @@
  * Reading sensors
  *  gr-108 paddle wheel plastic 1-60lpm 1.2Mpa f=5.5*q q=lpm
  *  cf-b10 impeller brass 2-50lpm 1.75Mpa f=7.5*q-4
- *  g1/4 Pressure Transducer(x2) 80psi 0-5v and 145psi 4-20ma 
+ *  g1/4 Pressure Transducer(x2) 80psi 0-5v and 145psi 4-20ma
  *  1/4 pressure xdcr 200psi 4-20ma 12v
  *
  * Interfaces
@@ -65,12 +65,12 @@
  * can't get good enough range. low end too noisy
  * 4ma=.034v  20ma=2.9v
  *
- * 
+ *
  * *********************************************************/
-
 
 #include <Arduino.h>
 #include <Wire.h>
+#include "RunningAverage.h"
 /**********************  ina3221  ***********************************/
 
 //#include <Beastdevices_INA3221.h>
@@ -91,6 +91,7 @@ float current_ma[3];
 float voltage[3];
 float shunt[3];
 float LoadV[3];
+float Avg_current_ma[3];
 /***********************************   ina219   ***************************/
 //#include <Adafruit_INA219.h>
 // Adafruit_INA219 ina219;
@@ -147,6 +148,8 @@ double out_max = 8.27;
 char data_in;
 float Distance[3];
 
+RunningAverage AvgCurrent(20);
+
 double mapf(double var, double InMin, double InMax, double OutMin, double OutMax);
 
 void DisplayData(void);
@@ -164,7 +167,7 @@ void setup()
 {
   Serial.begin(38400);  // on board serial
   Serial1.begin(38400); // BT serial
-
+  AvgCurrent.clear();
   /*************************  ina3221  ************************/
   // setup ina3221 SDL lib
   ina3221.begin();
@@ -210,6 +213,8 @@ void loop()
   shunt[0] = ina3221.getShuntVoltage_mV(1);
   LoadV[0] = voltage[0] + (shunt[0] / 1000000);
 
+  AvgCurrent.addValue(current_ma[0]);
+  Avg_current_ma[0] = AvgCurrent.getAverage();
   // bstdev lib
   /*     current[2] = ina3221.getCurrent(INA3221_CH3);
       voltage[2] = ina3221.getVoltage(INA3221_CH3);
@@ -276,7 +281,7 @@ void loop()
     }
   }
   // readings seem more stable at cm (300) than at mm (3000)
-  Distance[0] = mapf(current_ma[0], in_min, in_max, out_min, out_max);
+  Distance[0] = mapf(Avg_current_ma[0], in_min, in_max, out_min, out_max);
 
   unsigned long ap = millis();
   if ((ap - last_DISP_time) > update_DISP_interval)
@@ -351,6 +356,8 @@ void DisplayData(void)
   // local
   Serial.print("C1: ");
   Serial.print(current_ma[0], 3);
+  Serial.print("/");
+  Serial.print(Avg_current_ma[0], 3);
   Serial.print("mA, ");
   Serial.print(voltage[0], 2);
   Serial.print("V, ");
@@ -378,6 +385,8 @@ void DisplayData(void)
   // BT
   //  Serial.print("C1: ");
   Serial1.print(current_ma[0], 3);
+  Serial1.print("/");
+  Serial1.print(Avg_current_ma[0], 3);
   Serial1.print("mA, ");
   Serial1.print(voltage[0], 2);
   Serial1.print("V, ");
