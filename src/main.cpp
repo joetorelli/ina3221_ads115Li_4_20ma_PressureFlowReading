@@ -55,9 +55,11 @@
  *    PowerSup+ to 4-20Gen to shunt+ from shunt- to amp meter+ then amp meter- to ground
  *    Board power 3.3v
  *    tweeked _am_shunt_value until readout matched amp meter
- *    original value 5.93ohm tweeked value 5555
+ *    original value 5.93ohm tweeked value 5640 = with throw in sensor  // 5555 = with current gen;
  *    reolution now ~ .01ma +/-.005ma
  *    Setup serial input to change map values while testing in pool to calibrate mapf()
+ *
+ *  * SDL Lib works good with changes. I can't see how to change the shunt values seperately
  *
  * *********************************
  * Current to voltage converter
@@ -73,19 +75,23 @@
 #include "RunningAverage.h"
 /**********************  ina3221  ***********************************/
 
-//#include <Beastdevices_INA3221.h>
+#include <Beastdevices_INA3221.h>
 // Set I2C address to 0x41 (A0 pin -> VCC)
-// Beastdevices_INA3221 ina3221(INA3221_ADDR40_GND);
+Beastdevices_INA3221 ina3221(INA3221_ADDR40_GND);
 
 // SDL
-#include "SDL_Arduino_INA3221.h"
-static const uint8_t _am_addr = 64; //  hex 40 I2C address of sdl board
+//#include "SDL_Arduino_INA3221.h"
+//static const uint8_t _am_addr = 64; //  hex 40 I2C address of sdl board
 
 // tweeked the resistor value while measuring the current with a meter. To make the numbers very close.
-static const int32_t _am_shunt_value = 5640; // with throw in sensor  // 5555 = with current gen;
+//static const int32_t _am_shunt_value = 5640; // with throw in sensor  // 5555 = with current gen;
+// SDL_Arduino_INA3221 ina3221(_am_addr, _am_shunt_value);
 
-SDL_Arduino_INA3221 ina3221(_am_addr, _am_shunt_value);
-// SDL_Arduino_INA3221 ina3221;
+//BD lib
+static const int32_t _am_shunt_value= 5.555;
+
+
+
 // values for 3 chan
 float current_ma[3];
 float voltage[3];
@@ -140,10 +146,10 @@ void IRAM_ATTR PulseInterrupt()
 
 /**********************************  misc  *************************/
 double x;
-double in_min = 4.064;
-double in_max = 4.504;
-double out_min = 0.0;
-double out_max = 8.27;
+double in_min = 4.1;
+double in_max = 9.36;
+double out_min = 40.0;
+double out_max = 110.23;
 
 char data_in;
 float Distance[3];
@@ -170,13 +176,13 @@ void setup()
   AvgCurrent.clear();
   /*************************  ina3221  ************************/
   // setup ina3221 SDL lib
-  ina3221.begin();
-
-  // bstdev lib
   // ina3221.begin();
-  // ina3221.reset();
+
+  // setup ina3221 BD Lib
+  ina3221.begin();
+  ina3221.reset();
   //  Set shunt resistors to 100 mOhm for all channels
-  // ina3221.setShuntRes(100, 100, 100);
+  ina3221.setShuntRes(_am_shunt_value, 100, 100);
 
   /********************** flow  **********************/
   // setup pin and interrupt for pulse
@@ -208,19 +214,17 @@ void loop()
   /**************************  ina3221   ******************************/
 
   // SDL lib
-  current_ma[0] = ina3221.getCurrent_mA(1) * 1000;
-  voltage[0] = ina3221.getBusVoltage_V(1);
-  shunt[0] = ina3221.getShuntVoltage_mV(1);
-  LoadV[0] = voltage[0] + (shunt[0] / 1000000);
+  /*   current_ma[0] = ina3221.getCurrent_mA(1) * 1000;
+    voltage[0] = ina3221.getBusVoltage_V(1);
+    shunt[0] = ina3221.getShuntVoltage_mV(1);
+    LoadV[0] = voltage[0] + (shunt[0] / 1000000);
+   */
 
-  AvgCurrent.addValue(current_ma[0]);
-  Avg_current_ma[0] = AvgCurrent.getAverage();
   // bstdev lib
-  /*     current[2] = ina3221.getCurrent(INA3221_CH3);
-      voltage[2] = ina3221.getVoltage(INA3221_CH3);
-      shunt[2] = ina3221.getShuntVoltage(INA3221_CH3);
-      LoadV[2] = voltage[2] + (shunt[2] / 1000000);
-  */
+  current_ma[0] = ina3221.getCurrent(INA3221_CH1);
+  voltage[0] = ina3221.getVoltage(INA3221_CH1);
+  shunt[0] = ina3221.getShuntVoltage(INA3221_CH1)/1000;
+  LoadV[0] = voltage[0] + (shunt[0] / 1000000);
 
   /***************************  ina219  *******************************/
 
@@ -280,6 +284,10 @@ void loop()
       out_max = Serial1.parseFloat();
     }
   }
+
+  AvgCurrent.addValue(current_ma[0]);
+  Avg_current_ma[0] = AvgCurrent.getAverage();
+
   // readings seem more stable at cm (300) than at mm (3000)
   Distance[0] = mapf(Avg_current_ma[0], in_min, in_max, out_min, out_max);
 
