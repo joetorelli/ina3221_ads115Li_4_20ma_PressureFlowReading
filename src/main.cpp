@@ -81,16 +81,14 @@ Beastdevices_INA3221 ina3221(INA3221_ADDR40_GND);
 
 // SDL
 //#include "SDL_Arduino_INA3221.h"
-//static const uint8_t _am_addr = 64; //  hex 40 I2C address of sdl board
+// static const uint8_t _am_addr = 64; //  hex 40 I2C address of sdl board
 
 // tweeked the resistor value while measuring the current with a meter. To make the numbers very close.
-//static const int32_t _am_shunt_value = 5640; // with throw in sensor  // 5555 = with current gen;
+// static const int32_t _am_shunt_value = 5640; // with throw in sensor  // 5555 = with current gen;
 // SDL_Arduino_INA3221 ina3221(_am_addr, _am_shunt_value);
 
-//BD lib
-static const int32_t _am_shunt_value= 5.555;
-
-
+// BD lib
+ const int32_t _am_shunt_value = 560;
 
 // values for 3 chan
 float current_ma[3];
@@ -146,7 +144,15 @@ void IRAM_ATTR PulseInterrupt()
 
 /**********************************  misc  *************************/
 double x;
-double in_min = 4.1;
+
+// SD Lib
+/* double in_min = 4.1;
+double in_max = 9.36;
+double out_min = 40.0;
+double out_max = 110.23; */
+
+// BD lib
+double in_min = 4.0;
 double in_max = 9.36;
 double out_min = 40.0;
 double out_max = 110.23;
@@ -221,10 +227,10 @@ void loop()
    */
 
   // bstdev lib
-  current_ma[0] = ina3221.getCurrent(INA3221_CH1);
+  current_ma[0] = ina3221.getCurrent(INA3221_CH1) * 1000;
   voltage[0] = ina3221.getVoltage(INA3221_CH1);
-  shunt[0] = ina3221.getShuntVoltage(INA3221_CH1)/1000;
-  LoadV[0] = voltage[0] + (shunt[0] / 1000000);
+  shunt[0] = ina3221.getShuntVoltage(INA3221_CH1);
+  LoadV[0] = voltage[0] + (shunt[0]);  // / 1000000);
 
   /***************************  ina219  *******************************/
 
