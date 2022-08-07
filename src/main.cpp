@@ -14,6 +14,8 @@
  * Interfaces
  *  Current to voltage converter 0/4-20ma to 0-3.3/5/10v connected esp32 adc
  *  ina3221 voltage/current monitor connected to 80psi 5v and 145psi 4-20ma and ThrowIn 4-20ma
+ *  also used Utronics Current Signal gen in place of sensors.
+ *  feather esp32 for arduino
  *
  * //Explanation of I2C address for INA3221:
  *   //INA3221_ADDR40_GND = 0b1000000, // A0 pin -> GND
@@ -40,6 +42,8 @@
  * **************************************
  * working on ina3221
  * tried 2 libs
+ *
+ * SDL_Arduino_INA3221.h
  * dosen't seem to have the resolution
  * using CurrentGen or ThrowIn jumps in .4ma steps
  * may need to change shunt resistor to:
@@ -48,6 +52,8 @@
  *           168mv / 20ma        = 8.4 ohm   is this the max resistence?
  * changed resistor to 5.9 (it's what I had). This increased resolution.
  * 20ma * 5.9 ohm = 118mv  am i losing 50mv headroom?
+ * 20ma * 6.19 ohm = 123mv
+ * 20ma * 7.5 ohm = 150mv
  *
  * Calibration:
  *    Connected amp meter between shunt resistor and ground; volt meter across shunt resistor
@@ -59,13 +65,16 @@
  *    reolution now ~ .01ma +/-.005ma
  *    Setup serial input to change map values while testing in pool to calibrate mapf()
  *
- *  * SDL Lib works good with changes. I can't see how to change the shunt values seperately
+ *  * SDL Lib works good with changes. I can't see how to change the shunt values seperately.
+ *    using mapf() and scaling ma reading to 300cm gives very good stable results
+ *    instead of using 4ma at the bottom @ 4.1ma I measured the distance to the end of sensor
+ *    and used the 2 vals as my mins. The max vals were from the deepset water ~42in I had and the ma reading.
  *
  * *********************************
  * Current to voltage converter
  * jumpers set to 3.3v
- * can't get good enough range. low end too noisy
- * 4ma=.034v  20ma=2.9v
+ * can't get good enough range. low end too noisy 4ma=.034v  20ma=2.9v
+ * need to try different jumpers to bring up the low end.
  *
  *
  * *********************************************************/
@@ -73,6 +82,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include "RunningAverage.h"
+
 /**********************  ina3221  ***********************************/
 
 #include <Beastdevices_INA3221.h>
@@ -88,7 +98,9 @@ Beastdevices_INA3221 ina3221(INA3221_ADDR40_GND);
 // SDL_Arduino_INA3221 ina3221(_am_addr, _am_shunt_value);
 
 // BD lib
- const int32_t _am_shunt_value = 560;
+const int32_t C1ShuntR = 617; // with resistor = 56;
+const int32_t C2ShuntR = 750;
+const int32_t C3ShuntR = 815;
 
 // values for 3 chan
 float current_ma[3];
@@ -96,6 +108,9 @@ float voltage[3];
 float shunt[3];
 float LoadV[3];
 float Avg_current_ma[3];
+// float Avg_current_ma1;
+// float Avg_current_ma2;
+
 /***********************************   ina219   ***************************/
 //#include <Adafruit_INA219.h>
 // Adafruit_INA219 ina219;
@@ -152,15 +167,29 @@ double out_min = 40.0;
 double out_max = 110.23; */
 
 // BD lib
-double in_min = 4.0;
-double in_max = 9.36;
-double out_min = 40.0;
-double out_max = 110.23;
+double in_min[3] = {4.0, 4.0, 4.0};           // = 4.0;
+double in_max[3] = {9.36, 9.36, 9.36};        // = 9.36;
+double out_min[3] = {40.0, 40.0, 40.0};       // = 40.0;
+double out_max[3] = {110.23, 110.23, 110.23}; // = 110.23;
+/* double in_min0 = 4.0;
+double in_max0 = 9.36;
+double out_min0 = 40.0;
+double out_max0 = 110.23;
+double in_min1 = 4.0;
+double in_max1 = 9.36;
+double out_min1 = 40.0;
+double out_max1 = 110.23;
+double in_min2 = 4.0;
+double in_max2 = 9.36;
+double out_min2 = 40.0;
+double out_max2 = 110.23; */
 
 char data_in;
-float Distance[3];
+double Distance[3];
 
-RunningAverage AvgCurrent(20);
+RunningAverage AvgCurrent1(20);
+RunningAverage AvgCurrent2(20);
+RunningAverage AvgCurrent3(20);
 
 double mapf(double var, double InMin, double InMax, double OutMin, double OutMax);
 
@@ -179,7 +208,11 @@ void setup()
 {
   Serial.begin(38400);  // on board serial
   Serial1.begin(38400); // BT serial
-  AvgCurrent.clear();
+
+  AvgCurrent1.clear();
+  AvgCurrent2.clear();
+  AvgCurrent3.clear();
+
   /*************************  ina3221  ************************/
   // setup ina3221 SDL lib
   // ina3221.begin();
@@ -188,7 +221,7 @@ void setup()
   ina3221.begin();
   ina3221.reset();
   //  Set shunt resistors to 100 mOhm for all channels
-  ina3221.setShuntRes(_am_shunt_value, 100, 100);
+  ina3221.setShuntRes(C1ShuntR, C2ShuntR, C3ShuntR);
 
   /********************** flow  **********************/
   // setup pin and interrupt for pulse
@@ -222,15 +255,25 @@ void loop()
   // SDL lib
   /*   current_ma[0] = ina3221.getCurrent_mA(1) * 1000;
     voltage[0] = ina3221.getBusVoltage_V(1);
-    shunt[0] = ina3221.getShuntVoltage_mV(1);
-    LoadV[0] = voltage[0] + (shunt[0] / 1000000);
+    shunt[0] = ina3221.getShuntVoltage_mV(1);  /// 1000000
+    LoadV[0] = voltage[0] + (shunt[0] );
    */
 
   // bstdev lib
-  current_ma[0] = ina3221.getCurrent(INA3221_CH1) * 1000;
+  current_ma[0] = ina3221.getCurrent(INA3221_CH1) * 100;
   voltage[0] = ina3221.getVoltage(INA3221_CH1);
-  shunt[0] = ina3221.getShuntVoltage(INA3221_CH1);
-  LoadV[0] = voltage[0] + (shunt[0]);  // / 1000000);
+  shunt[0] = ina3221.getShuntVoltage(INA3221_CH1) / 1000;
+  LoadV[0] = voltage[0] + (shunt[0]);
+
+  current_ma[1] = ina3221.getCurrent(INA3221_CH2) * 100;
+  voltage[1] = ina3221.getVoltage(INA3221_CH2);
+  shunt[1] = ina3221.getShuntVoltage(INA3221_CH2) / 1000;
+  LoadV[1] = voltage[1] + (shunt[1]);
+
+  current_ma[2] = ina3221.getCurrent(INA3221_CH3) * 100;
+  voltage[2] = ina3221.getVoltage(INA3221_CH3);
+  shunt[2] = ina3221.getShuntVoltage(INA3221_CH3) / 1000;
+  LoadV[2] = voltage[2] + (shunt[2]);
 
   /***************************  ina219  *******************************/
 
@@ -261,6 +304,7 @@ void loop()
     loadvoltage = voltage[2] + (shunt[2] / 1000);
   */
 
+  // read new vals
   while (Serial1.available() > 0)
   {
     //  runner.pause();
@@ -268,34 +312,63 @@ void loop()
 
     // pump on level
     if (data_in == 'N')
-    {                                //  Slider
-      in_min = Serial1.parseFloat(); // parseInt();
+    {
+      in_min[0] = Serial1.parseFloat();
+    }
+    // pump on level
+    if (data_in == 'n')
+    {
+      in_min[1] = Serial1.parseFloat();
     }
 
     // pump off level
     if (data_in == 'O')
     { //  Slider
-      in_max = Serial1.parseFloat();
+      in_max[0] = Serial1.parseFloat();
+    }
+    // pump off level
+    if (data_in == 'o')
+    { //  Slider
+      in_max[1] = Serial1.parseFloat();
     }
 
     // alarm on level
     if (data_in == 'P')
     { //  Slider
-      out_min = Serial1.parseFloat();
+      out_min[0] = Serial1.parseFloat();
+    }
+    // alarm on level
+    if (data_in == 'p')
+    { //  Slider
+      out_min[1] = Serial1.parseFloat();
     }
 
     // alarm off level
     if (data_in == 'Q')
     { //  Slider
-      out_max = Serial1.parseFloat();
+      out_max[0] = Serial1.parseFloat();
+    }
+    // alarm off level
+    if (data_in == 'q')
+    { //  Slider
+      out_max[1] = Serial1.parseFloat();
     }
   }
 
-  AvgCurrent.addValue(current_ma[0]);
-  Avg_current_ma[0] = AvgCurrent.getAverage();
+  // average chans
+  AvgCurrent1.addValue(current_ma[0]);
+  Avg_current_ma[0] = AvgCurrent1.getAverage();
+
+  AvgCurrent2.addValue(current_ma[1]);
+  Avg_current_ma[1] = AvgCurrent2.getAverage();
+
+  AvgCurrent3.addValue(current_ma[2]);
+  Avg_current_ma[2] = AvgCurrent3.getAverage();
 
   // readings seem more stable at cm (300) than at mm (3000)
-  Distance[0] = mapf(Avg_current_ma[0], in_min, in_max, out_min, out_max);
+  Distance[0] = mapf(Avg_current_ma[0], in_min[0], in_max[0], out_min[0], out_max[0]);
+  Distance[1] = mapf(Avg_current_ma[1], in_min[1], in_max[1], out_min[1], out_max[1]);
+  Distance[2] = mapf(Avg_current_ma[2], in_min[2], in_max[2], out_min[2], out_max[2]);
 
   unsigned long ap = millis();
   if ((ap - last_DISP_time) > update_DISP_interval)
@@ -383,72 +456,148 @@ void DisplayData(void)
   Serial.print("V, ");
   Serial.print("D: ");
   Serial.println(Distance[0]);
-  Serial.println("");
-  Serial.println("");
+
+  Serial.print("C2: ");
+  Serial.print(current_ma[1], 3);
+  Serial.print("/");
+  Serial.print(Avg_current_ma[1], 3);
+  Serial.print("mA, ");
+  Serial.print(voltage[1], 2);
+  Serial.print("V, ");
+  Serial.print("Sh ");
+  Serial.print(shunt[1], 2);
+  Serial.print("mV, ");
+  Serial.print("LodV ");
+  Serial.print(LoadV[1], 2);
+  Serial.print("V, ");
+  Serial.print("D: ");
+  Serial.println(Distance[1]);
+
+  Serial.print("C3: ");
+  Serial.print(current_ma[2], 3);
+  Serial.print("/");
+  Serial.print(Avg_current_ma[2], 3);
+  Serial.print("mA, ");
+  Serial.print(voltage[2], 2);
+  Serial.print("V, ");
+  Serial.print("Sh ");
+  Serial.print(shunt[2], 2);
+  Serial.print("mV, ");
+  Serial.print("LodV ");
+  Serial.print(LoadV[2], 2);
+  Serial.print("V, ");
+  Serial.print("D: ");
+  Serial.println(Distance[2]);
+
+  Serial.println("---");
   Serial.print("IM ");
-  Serial.print(in_min);
+  Serial.print(in_min[0]);
   Serial.print(" IX ");
-  Serial.print(in_max);
+  Serial.print(in_max[0]);
   Serial.print(" OM ");
-  Serial.print(out_min);
+  Serial.print(out_min[0]);
   Serial.print(" OX ");
-  Serial.print(out_max);
-  Serial.println("");
+  Serial.println(out_max[0]);
+
+  Serial.print("IM ");
+  Serial.print(in_min[1]);
+  Serial.print(" IX ");
+  Serial.print(in_max[1]);
+  Serial.print(" OM ");
+  Serial.print(out_min[1]);
+  Serial.print(" OX ");
+  Serial.print(out_max[1]);
   Serial.println("");
 
-  // BT
-  //  Serial.print("C1: ");
+  Serial.print("IM ");
+  Serial.print(in_min[2]);
+  Serial.print(" IX ");
+  Serial.print(in_max[2]);
+  Serial.print(" OM ");
+  Serial.print(out_min[2]);
+  Serial.print(" OX ");
+  Serial.println(out_max[2]);
+
+  Serial.println("---");
+
+  ////////////////////////////////////// BT
+  Serial1.print("1:");
   Serial1.print(current_ma[0], 3);
   Serial1.print("/");
   Serial1.print(Avg_current_ma[0], 3);
   Serial1.print("mA, ");
   Serial1.print(voltage[0], 2);
   Serial1.print("V, ");
-  Serial1.print("Sh ");
   Serial1.print(shunt[0], 2);
-  Serial1.print("mV, ");
+  Serial1.print("SmV, ");
   // Serial1.print("LV ");
   // Serial1.print(LoadV[0], 2);
   // Serial1.println("V");
   Serial1.print("D ");
   Serial1.println(Distance[0]);
   Serial1.println("");
+
+  Serial1.print("IM ");
+  Serial1.print(in_min[0]);
+  Serial1.print("IX ");
+  Serial1.print(in_max[0]);
+  Serial1.print("OM ");
+  Serial1.print(out_min[0]);
+  Serial1.print("OX ");
+  Serial1.print(out_max[0]);
+ Serial.println("---");
+
+  Serial1.print("2:");
+  Serial1.print(current_ma[1], 3);
+  Serial1.print("/");
+  Serial1.print(Avg_current_ma[1], 3);
+  Serial1.print("mA, ");
+  Serial1.print(voltage[1], 2);
+  Serial1.print("V, ");
+  Serial1.print(shunt[1], 2);
+  Serial1.print("SmV, ");
+  // Serial1.print("LV ");
+  // Serial1.print(LoadV[1], 2);
+  // Serial1.println("V");
+  Serial1.print("D ");
+  Serial1.println(Distance[1]);
+
   Serial1.println("");
   Serial1.print("IM ");
-  Serial1.print(in_min);
-  Serial1.print(" IX ");
-  Serial1.print(in_max);
-  Serial1.print(" OM ");
-  Serial1.print(out_min);
-  Serial1.print(" OX ");
-  Serial1.print(out_max);
+  Serial1.print(in_min[1]);
+  Serial1.print("IX ");
+  Serial1.print(in_max[1]);
+  Serial1.print("OM ");
+  Serial1.print(out_min[1]);
+  Serial1.print("OX ");
+  Serial1.print(out_max[1]);
+ Serial.println("---");
+
+  Serial1.print("3:");
+  Serial1.print(current_ma[2], 3);
+  Serial1.print("/");
+  Serial1.print(Avg_current_ma[2], 3);
+  Serial1.print("mA, ");
+  Serial1.print(voltage[2], 2);
+  Serial1.print("V, ");
+  Serial1.print(shunt[2], 2);
+  Serial1.print("SmV, ");
+  // Serial1.print("LV ");
+  // Serial1.print(LoadV[2], 2);
+  // Serial1.println("V");
+  Serial1.print("D ");
+  Serial1.println(Distance[2]);
+
   Serial1.println("");
-  Serial1.println("");
-  /*
-       Serial.print(" C2: ");
-      Serial.print(current_ma[1], 4);
-      Serial.print("ma, ");
-      Serial.print(voltage[1], 2);
-      Serial.print("V, ");
-      Serial.print("Sh ");
-      Serial.print(shunt[1], 2);
-      Serial.print("uV, ");
-      Serial.print("LV ");
-      Serial.print(LoadV[1], 2);
-      Serial.println("V"); */
-  /*
-      Serial1.print("  C3: ");
-      Serial1.print(current[2], 4);
-      Serial1.print("A, ");
-      Serial1.print(voltage[2], 2);
-      Serial1.print("V");
-      Serial1.print(" Shnt: ");
-      Serial1.print(shunt[2], 2);
-      Serial1.print("uV, ");
-      Serial1.print("LodV ");
-      Serial1.print(LoadV[2], 2);
-      Serial1.println("V");
-     */
+  Serial1.print("IM ");
+  Serial1.print(in_min[2]);
+  Serial1.print("IX ");
+  Serial1.print(in_max[2]);
+  Serial1.print("OM ");
+  Serial1.print(out_min[2]);
+  Serial1.print("OX ");
+  Serial1.print(out_max[2]);
+ Serial.println("---");
 }
 
 double mapf(double var, double InMin, double InMax, double OutMin, double OutMax)
