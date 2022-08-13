@@ -47,7 +47,7 @@
  * dosen't seem to have the resolution
  * using CurrentGen or ThrowIn jumps in .4ma steps
  * may need to change shunt resistor to:
- * If I'm reading datasheet the max volts is 168mv across the shunt
+ * If I'm reading datasheet correctly the max volts is 168mv across the shunt
  *  shut max volts / max current = resistor
  *           168mv / 20ma        = 8.4 ohm   is this the max resistence?
  * changed resistor to 5.9 (it's what I had). This increased resolution.
@@ -60,6 +60,7 @@
  *    Connected a 4-20ma generator to simulate current loop
  *    PowerSup+ to 4-20Gen to shunt+ from shunt- to amp meter+ then amp meter- to ground
  *    Board power 3.3v
+ * (SDL)
  *    tweeked _am_shunt_value until readout matched amp meter
  *    original value 5.93ohm tweeked value 5640 = with throw in sensor  // 5555 = with current gen;
  *    reolution now ~ .01ma +/-.005ma
@@ -70,6 +71,9 @@
  *    instead of using 4ma at the bottom @ 4.1ma I measured the distance to the end of sensor
  *    and used the 2 vals as my mins. The max vals were from the deepset water ~42in I had and the ma reading.
  *
+ * *  BD Lib has seperate values. But the input values are funky to the resitor value
+ *    It doesn't have float vals for resistor.
+ *    need to test in pool with this lib.
  * *********************************
  * Current to voltage converter
  * jumpers set to 3.3v
@@ -167,25 +171,13 @@ double out_min = 40.0;
 double out_max = 110.23; */
 
 // BD lib
-double in_min[3] = {4.0, 4.0, 4.0};           // = 4.0;
+double in_min[3] = {4.1, 4.1, 4.0};           // = 4.0;
 double in_max[3] = {9.36, 9.36, 9.36};        // = 9.36;
 double out_min[3] = {40.0, 40.0, 40.0};       // = 40.0;
 double out_max[3] = {110.23, 110.23, 110.23}; // = 110.23;
-/* double in_min0 = 4.0;
-double in_max0 = 9.36;
-double out_min0 = 40.0;
-double out_max0 = 110.23;
-double in_min1 = 4.0;
-double in_max1 = 9.36;
-double out_min1 = 40.0;
-double out_max1 = 110.23;
-double in_min2 = 4.0;
-double in_max2 = 9.36;
-double out_min2 = 40.0;
-double out_max2 = 110.23; */
 
-char data_in;
-double Distance[3];
+char data_in;     // from BT
+double Distance[3];  // output of mapf
 
 RunningAverage AvgCurrent1(20);
 RunningAverage AvgCurrent2(20);
