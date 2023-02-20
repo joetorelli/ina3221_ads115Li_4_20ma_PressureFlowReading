@@ -89,22 +89,26 @@
 
 /**********************  ina3221  ***********************************/
 
-#include <Beastdevices_INA3221.h>
-// Set I2C address to 0x41 (A0 pin -> VCC)
-Beastdevices_INA3221 ina3221(INA3221_ADDR40_GND);
+// #include <Beastdevices_INA3221.h>
+//  Set I2C address to 0x41 (A0 pin -> VCC)
+// Beastdevices_INA3221 ina3221(INA3221_ADDR40_GND);
 
 // SDL
-//#include "SDL_Arduino_INA3221.h"
-// static const uint8_t _am_addr = 64; //  hex 40 I2C address of sdl board
+#include "SDL_Arduino_INA3221.h"
+static const uint8_t _am_addr = 64; //  hex 40 I2C address of sdl board
 
 // tweeked the resistor value while measuring the current with a meter. To make the numbers very close.
 // static const int32_t _am_shunt_value = 5640; // with throw in sensor  // 5555 = with current gen;
-// SDL_Arduino_INA3221 ina3221(_am_addr, _am_shunt_value);
+static const int32_t _am_shunt_value = 100;
+SDL_Arduino_INA3221 ina3221(_am_addr, _am_shunt_value);
 
 // BD lib
-const int32_t C1ShuntR = 617; // with resistor = 56;
+// const int32_t C1ShuntR = 617; // with resistor = 56;
+// const int32_t C2ShuntR = 750;
+// const int32_t C3ShuntR = 815;
+const int32_t C1ShuntR = 10; // with resistor = 56;
 const int32_t C2ShuntR = 750;
-const int32_t C3ShuntR = 815;
+const int32_t C3ShuntR = 10;
 
 // values for 3 chan
 float current_ma[3];
@@ -116,8 +120,8 @@ float Avg_current_ma[3];
 // float Avg_current_ma2;
 
 /***********************************   ina219   ***************************/
-//#include <Adafruit_INA219.h>
-// Adafruit_INA219 ina219;
+// #include <Adafruit_INA219.h>
+//  Adafruit_INA219 ina219;
 
 /******************************  pulsed input  ****************************/
 // connected to impeller on flow sensor
@@ -176,8 +180,8 @@ double in_max[3] = {9.36, 9.36, 9.36};        // = 9.36;
 double out_min[3] = {40.0, 40.0, 40.0};       // = 40.0;
 double out_max[3] = {110.23, 110.23, 110.23}; // = 110.23;
 
-char data_in;     // from BT
-double Distance[3];  // output of mapf
+char data_in;       // from BT
+double Distance[3]; // output of mapf
 
 RunningAverage AvgCurrent1(20);
 RunningAverage AvgCurrent2(20);
@@ -207,13 +211,13 @@ void setup()
 
   /*************************  ina3221  ************************/
   // setup ina3221 SDL lib
-  // ina3221.begin();
+  ina3221.begin();
 
   // setup ina3221 BD Lib
-  ina3221.begin();
-  ina3221.reset();
+  // ina3221.begin();
+  // ina3221.reset();
   //  Set shunt resistors to 100 mOhm for all channels
-  ina3221.setShuntRes(C1ShuntR, C2ShuntR, C3ShuntR);
+  // ina3221.setShuntRes(C1ShuntR, C2ShuntR, C3ShuntR);
 
   /********************** flow  **********************/
   // setup pin and interrupt for pulse
@@ -245,28 +249,37 @@ void loop()
   /**************************  ina3221   ******************************/
 
   // SDL lib
-  /*   current_ma[0] = ina3221.getCurrent_mA(1) * 1000;
-    voltage[0] = ina3221.getBusVoltage_V(1);
-    shunt[0] = ina3221.getShuntVoltage_mV(1);  /// 1000000
-    LoadV[0] = voltage[0] + (shunt[0] );
-   */
-
-  // bstdev lib
-  current_ma[0] = ina3221.getCurrent(INA3221_CH1) * 100;
-  voltage[0] = ina3221.getVoltage(INA3221_CH1);
-  shunt[0] = ina3221.getShuntVoltage(INA3221_CH1) / 1000;
+  current_ma[0] = ina3221.getCurrent_mA(1) * 1000;
+  voltage[0] = ina3221.getBusVoltage_V(1);
+  shunt[0] = ina3221.getShuntVoltage_mV(1); /// 1000000
   LoadV[0] = voltage[0] + (shunt[0]);
 
-  current_ma[1] = ina3221.getCurrent(INA3221_CH2) * 100;
-  voltage[1] = ina3221.getVoltage(INA3221_CH2);
-  shunt[1] = ina3221.getShuntVoltage(INA3221_CH2) / 1000;
+  current_ma[1] = ina3221.getCurrent_mA(2) * 1000;
+  voltage[1] = ina3221.getBusVoltage_V(2);
+  shunt[1] = ina3221.getShuntVoltage_mV(2); /// 1000000
   LoadV[1] = voltage[1] + (shunt[1]);
 
-  current_ma[2] = ina3221.getCurrent(INA3221_CH3) * 100;
-  voltage[2] = ina3221.getVoltage(INA3221_CH3);
-  shunt[2] = ina3221.getShuntVoltage(INA3221_CH3) / 1000;
+  current_ma[2] = ina3221.getCurrent_mA(3) * 1000;
+  voltage[2] = ina3221.getBusVoltage_V(3);
+  shunt[2] = ina3221.getShuntVoltage_mV(3); /// 1000000
   LoadV[2] = voltage[2] + (shunt[2]);
 
+  // bstdev lib
+  /*   current_ma[0] = ina3221.getCurrent(INA3221_CH1) * 100;
+    voltage[0] = ina3221.getVoltage(INA3221_CH1);
+    shunt[0] = ina3221.getShuntVoltage(INA3221_CH1) / 1000;
+    LoadV[0] = voltage[0] + (shunt[0]);
+
+    current_ma[1] = ina3221.getCurrent(INA3221_CH2) * 100;
+    voltage[1] = ina3221.getVoltage(INA3221_CH2);
+    shunt[1] = ina3221.getShuntVoltage(INA3221_CH2) / 1000;
+    LoadV[1] = voltage[1] + (shunt[1]);
+
+    current_ma[2] = ina3221.getCurrent(INA3221_CH3) * 100;
+    voltage[2] = ina3221.getVoltage(INA3221_CH3);
+    shunt[2] = ina3221.getShuntVoltage(INA3221_CH3) / 1000;
+    LoadV[2] = voltage[2] + (shunt[2]);
+   */
   /***************************  ina219  *******************************/
 
   /*   shunt[2] = ina219.getShuntVoltage_mV();
@@ -348,6 +361,7 @@ void loop()
   }
 
   // average chans
+
   AvgCurrent1.addValue(current_ma[0]);
   Avg_current_ma[0] = AvgCurrent1.getAverage();
 
@@ -435,7 +449,7 @@ void DisplayData(void)
   // local
   Serial.print("C1: ");
   Serial.print(current_ma[0], 3);
-  Serial.print("/");
+  Serial.print(" / ");
   Serial.print(Avg_current_ma[0], 3);
   Serial.print("mA, ");
   Serial.print(voltage[0], 2);
@@ -537,7 +551,7 @@ void DisplayData(void)
   Serial1.print(out_min[0]);
   Serial1.print("OX ");
   Serial1.print(out_max[0]);
- Serial.println("---");
+  Serial.println("---");
 
   Serial1.print("2:");
   Serial1.print(current_ma[1], 3);
@@ -563,7 +577,7 @@ void DisplayData(void)
   Serial1.print(out_min[1]);
   Serial1.print("OX ");
   Serial1.print(out_max[1]);
- Serial.println("---");
+  Serial.println("---");
 
   Serial1.print("3:");
   Serial1.print(current_ma[2], 3);
@@ -589,7 +603,7 @@ void DisplayData(void)
   Serial1.print(out_min[2]);
   Serial1.print("OX ");
   Serial1.print(out_max[2]);
- Serial.println("---");
+  Serial.println("---");
 }
 
 double mapf(double var, double InMin, double InMax, double OutMin, double OutMax)
